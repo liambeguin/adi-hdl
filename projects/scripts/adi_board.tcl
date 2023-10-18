@@ -7,7 +7,10 @@ package require math
 
 ## Global variables for interconnect interface indexing
 #
+set sys_hpm0fpd_interconnect_index 0
+set sys_hpm1fpd_interconnect_index 0
 set sys_cpu_interconnect_index 0
+
 set sys_hpc0_interconnect_index -1
 set sys_hpc1_interconnect_index -1
 set sys_hp0_interconnect_index -1
@@ -933,18 +936,44 @@ proc ad_mem_hpx_interconnect {p_sel p_clk p_name} {
 ## Create an AXI4 Lite memory mapped interface connection for register maps,
 #  instantiates an interconnect and reconfigure it at every process call.
 #
+#  \param[p_sel] - name of the high speed interface
+#                  valid values are HPM0_FPD, HPM1_FPD, HPM0_LPD
 #  \param[p_address] - address offset of the IP register map
 #  \param[p_name] - name of the IP
 #  \param[p_intf_name] - name of the AXI MM Slave interface (optional)
 #
-proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
+proc ad_hpmx_interconnect {p_sel p_address p_name {p_intf_name {}}} {
 
   global sys_zynq
+  global sys_hpm0fpd_interconnect_index
+  global sys_hpm1fpd_interconnect_index
   global sys_cpu_interconnect_index
 
-  set i_str "M$sys_cpu_interconnect_index"
-  if {$sys_cpu_interconnect_index < 10} {
-    set i_str "M0$sys_cpu_interconnect_index"
+  if { $sys_zynq != 2 } {
+    puts "WARNING: ad_hpmx_interconnect: partial support for sys_zynq != 2"
+  }
+
+  if {($p_sel eq "HPM0_FPD") && ($sys_zynq == 2)} {
+    set interconnect_name axi_hpm0fpd_interconnect
+
+    set i_str "M$sys_hpm0fpd_interconnect_index"
+    if {$sys_hpm0fpd_interconnect_index < 10} {
+      set i_str "M0$sys_hpm0fpd_interconnect_index"
+    }
+  } elseif {($p_sel eq "HPM1_FPD") && ($sys_zynq == 2)} {
+    set interconnect_name axi_hpm1fpd_interconnect
+
+    set i_str "M$sys_hpm1fpd_interconnect_index"
+    if {$sys_hpm1fpd_interconnect_index < 10} {
+      set i_str "M0$sys_hpm1fpd_interconnect_index"
+    }
+  } else {
+    set interconnect_name axi_cpu_interconnect
+
+    set i_str "M$sys_cpu_interconnect_index"
+    if {$sys_cpu_interconnect_index < 10} {
+      set i_str "M0$sys_cpu_interconnect_index"
+    }
   }
 
   set use_smart_connect 1
@@ -953,40 +982,42 @@ proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
     set use_smart_connect 0
   }
 
-  if {$sys_cpu_interconnect_index == 0} {
+  if {$i_str eq "M00"} {
 
     if {$use_smart_connect == 1} {
-      ad_ip_instance smartconnect axi_cpu_interconnect [ list \
+      ad_ip_instance smartconnect $interconnect_name [ list \
         NUM_MI 1 \
         NUM_SI 1 \
       ]
-      ad_connect sys_cpu_clk axi_cpu_interconnect/aclk
-      ad_connect sys_cpu_resetn axi_cpu_interconnect/aresetn
+      ad_connect sys_cpu_clk ${interconnect_name}/aclk
+      ad_connect sys_cpu_resetn ${interconnect_name}/aresetn
     } else {
-      ad_ip_instance axi_interconnect axi_cpu_interconnect
-      ad_connect sys_cpu_clk axi_cpu_interconnect/ACLK
-      ad_connect sys_cpu_clk axi_cpu_interconnect/S00_ACLK
-      ad_connect sys_cpu_resetn axi_cpu_interconnect/ARESETN
-      ad_connect sys_cpu_resetn axi_cpu_interconnect/S00_ARESETN
+      ad_ip_instance axi_interconnect $interconnect_name
+      ad_connect sys_cpu_clk ${interconnect_name}/ACLK
+      ad_connect sys_cpu_clk ${interconnect_name}/S00_ACLK
+      ad_connect sys_cpu_resetn ${interconnect_name}/ARESETN
+      ad_connect sys_cpu_resetn ${interconnect_name}/S00_ARESETN
     }
 
     if {$sys_zynq == 3} {
       ad_connect sys_cpu_clk sys_cips/m_axi_fpd_aclk
-      ad_connect axi_cpu_interconnect/S00_AXI sys_cips/M_AXI_FPD
-    }
-    if {$sys_zynq == 2} {
+      ad_connect ${interconnect_name}/S00_AXI sys_cips/M_AXI_FPD
+    } elseif {($p_sel eq "HPM0_FPD") && ($sys_zynq == 2)} {
+      ad_connect sys_cpu_clk sys_ps8/maxihpm0_fpd_aclk
+      ad_connect ${interconnect_name}/S00_AXI sys_ps8/M_AXI_HPM0_FPD
+    } elseif {($p_sel eq "HPM1_FPD") && ($sys_zynq == 2)} {
+      ad_connect sys_cpu_clk sys_ps8/maxihpm1_fpd_aclk
+      ad_connect ${interconnect_name}/S00_AXI sys_ps8/M_AXI_HPM1_FPD
+    } elseif {($p_sel eq "HPM0_LPD") && ($sys_zynq == 2)} {
       ad_connect sys_cpu_clk sys_ps8/maxihpm0_lpd_aclk
-      ad_connect axi_cpu_interconnect/S00_AXI sys_ps8/M_AXI_HPM0_LPD
-    }
-    if {$sys_zynq == 1} {
+      ad_connect ${interconnect_name}/S00_AXI sys_ps8/M_AXI_HPM0_LPD
+    } elseif {$sys_zynq == 1} {
       ad_connect sys_cpu_clk sys_ps7/M_AXI_GP0_ACLK
-      ad_connect axi_cpu_interconnect/S00_AXI sys_ps7/M_AXI_GP0
-    }
-    if {$sys_zynq == 0} {
-      ad_connect axi_cpu_interconnect/S00_AXI sys_mb/M_AXI_DP
-    }
-    if {$sys_zynq == -1} {
-      ad_connect axi_cpu_interconnect/S00_AXI mng_axi_vip/M_AXI
+      ad_connect ${interconnect_name}/S00_AXI sys_ps7/M_AXI_GP0
+    } elseif {$sys_zynq == 0} {
+      ad_connect ${interconnect_name}/S00_AXI sys_mb/M_AXI_DP
+    } elseif {$sys_zynq == -1} {
+      ad_connect ${interconnect_name}/S00_AXI mng_axi_vip/M_AXI
     }
   }
 
@@ -1006,8 +1037,13 @@ proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
     set sys_addr_cntrl_space [get_bd_addr_spaces mng_axi_vip/Master_AXI]
   }
 
-  set sys_cpu_interconnect_index [expr $sys_cpu_interconnect_index + 1]
-
+  if {($p_sel eq "HPM0_FPD")} {
+    set sys_hpm0fpd_interconnect_index [expr $sys_hpm0fpd_interconnect_index + 1]
+  } elseif {($p_sel eq "HPM1_FPD")} {
+    set sys_hpm1fpd_interconnect_index [expr $sys_hpm1fpd_interconnect_index + 1]
+  } elseif {($p_sel eq "HPM0_LPD")} {
+    set sys_cpu_interconnect_index [expr $sys_cpu_interconnect_index + 1]
+  }
 
   set p_cell [get_bd_cells $p_name]
   set p_intf [get_bd_intf_pins -filter \
@@ -1089,11 +1125,17 @@ proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
     }
   }
 
-  set_property CONFIG.NUM_MI $sys_cpu_interconnect_index [get_bd_cells axi_cpu_interconnect]
+  if {($p_sel eq "HPM0_FPD")} {
+    set_property CONFIG.NUM_MI $sys_hpm0fpd_interconnect_index [get_bd_cells $interconnect_name]
+  } elseif {($p_sel eq "HPM1_FPD")} {
+    set_property CONFIG.NUM_MI $sys_hpm1fpd_interconnect_index [get_bd_cells $interconnect_name]
+  } elseif {($p_sel eq "HPM0_LPD")} {
+    set_property CONFIG.NUM_MI $sys_cpu_interconnect_index [get_bd_cells $interconnect_name]
+  }
 
   if {$use_smart_connect == 0} {
-    ad_connect sys_cpu_clk axi_cpu_interconnect/${i_str}_ACLK
-    ad_connect sys_cpu_resetn axi_cpu_interconnect/${i_str}_ARESETN
+    ad_connect sys_cpu_clk ${interconnect_name}/${i_str}_ACLK
+    ad_connect sys_cpu_resetn ${interconnect_name}/${i_str}_ARESETN
   }
   if {$p_intf_clock ne ""} {
     ad_connect sys_cpu_clk ${p_intf_clock}
@@ -1101,7 +1143,7 @@ proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
   if {$p_intf_reset ne ""} {
     ad_connect sys_cpu_resetn ${p_intf_reset}
   }
-  ad_connect axi_cpu_interconnect/${i_str}_AXI ${p_intf}
+  ad_connect ${interconnect_name}/${i_str}_AXI ${p_intf}
 
   set p_seg [get_bd_addr_segs -of [get_bd_addr_spaces -of [get_bd_intf_pins -filter "NAME=~ *${p_intf_name}*" -of $p_hier_cell]]]
   set p_index 0
@@ -1139,6 +1181,18 @@ proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
     }
     incr p_index
   }
+}
+
+## Create an AXI4 Lite memory mapped interface connection for register maps,
+#  instantiates an interconnect and reconfigure it at every process call.
+#
+#  \param[p_address] - address offset of the IP register map
+#  \param[p_name] - name of the IP
+#  \param[p_intf_name] - name of the AXI MM Slave interface (optional)
+#
+proc ad_cpu_interconnect {p_address p_name {p_intf_name {}}} {
+
+  ad_hpmx_interconnect "HPM0_LPD" $p_address $p_name $p_intf_name
 }
 
 ## Connects an IP interrupt port to the system's interrupt controller interface.
